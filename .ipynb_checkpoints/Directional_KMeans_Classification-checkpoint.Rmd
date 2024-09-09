@@ -1,0 +1,211 @@
+```{r}
+BEST = function(data, standardize, log, normalized){
+  # 参数：
+  # data：数据集，只有目标的两列
+  # standardize：是一个布尔值，TRUE代表需要标准化，FALSE代表不需要标准化
+  # log：是一个布尔值，TRUE代表需要进行log变换，FALSE代表不需要进行log变换
+  # normalized：归一化
+  # 未实现：order：标准化，log，归一化的顺序，一个向量：e.g. c(1,2,3) 0代表不做此变换
+  # 直接调用输出：一个dataframe：包括原始数据和每次分类的结果，以及最终vote出来的分类
+  #               可视化的plot
+  #               两个aggregate出来的dataframe，分别是两类在两个变量上的均值
+  # 注意：需要根据数据自主选择是否进行标准化，log，归一化，以及选择它们的顺序，有时候它们的顺序会严重影响分类的结果!!!!!!!!!!!!!
+  
+  
+  if(standardize){
+    # 使用 scale() 函数对所有列进行标准化
+    data = as.data.frame(scale(data))
+  }
+  
+  if(log){
+    # 找到每列的最小值并计算平移量
+    shifts <- apply(data, 2, function(x) abs(min(x)) + 1)
+    # 应用平移和对数变换
+    data <- as.data.frame(mapply(function(x, shift) log(x + shift), data, shifts))
+  }
+
+  if(normalized){
+    # 归一化函数
+    normalize <- function(x) {
+      return((x - min(x)) / (max(x) - min(x)))
+    }
+    # 应用归一化
+    data <- as.data.frame(lapply(data, normalize))
+  }
+
+  # 创建向量A和B
+  A <- seq(0.05, 0.95, by = 0.05) * nrow(data) # 100, 200, ..., 1800
+  B <- seq(0.05, 0.95, by = 0.05) * nrow(data)
+  # 初始化一个列表来保存每次迭代的结果
+  results <- list()
+  
+  # 处理都大的
+  for(a in A) {
+    for(b in B) {
+    
+      sorted_1 <- order(-data[ , 1]) # 第一列
+      sorted_2 <- order(-data[ , 2]) # 第二列
+      # 删除都高的数据
+      intersection <- Reduce(intersect, list(sorted_1[1:a], sorted_2[1:b]))
+      data_filtered = data[-intersection, ]
+    
+      if(nrow(data_filtered) >= 0.5*nrow(data) 
+        & nrow(data_filtered <= 0.9*nrow(data))){ # 筛选后的观测个数大于等于原数据观测个数的百分之50，小于等于原数据总观测数的百分之95才算
+
+        # 应用Kmeans算法
+        set.seed(123) # 确保可重复性
+        km <- kmeans(data_filtered, centers = 2)
+      
+        # 获取每个类别的均值 ########################################################
+        means <- aggregate(data_filtered[, 2], list(km$cluster), mean) # 根据分类结果对data_filtered第二列（y）取均值
+        names(means) <- c("cluster", "mean_y")
+        # 确保类别1的第二列的均值总是大于类别2的
+        if(means$mean_y[means$cluster == 1] < means$mean_y[means$cluster == 2]){
+          km$cluster <- ifelse(km$cluster == 1, 2, 1)
+        }
+        #############################################################################
+    
+        index_class1 = which(km$cluster == 1)
+        index_class2 = which(km$cluster == 2)
+    
+        class1 = data[index_class1, ]
+        class2 = data[index_class2, ]
+    
+        # 判断分类是否符合预期（您需要编写一个判断函数）
+        mean_A_class1 = mean(class1[,1])
+        mean_B_class1 = mean(class1[,2])
+        mean_A_class2 = mean(class2[,1])
+        mean_B_class2 = mean(class2[,2])
+  
+        is_desired_classification = 
+          mean_A_class1-mean_A_class2 < -0.001*(max(data_filtered[,1]) - min(data_filtered[,1])) & mean_B_class1-mean_B_class2 > 0.001*(max(data_filtered[,2]) - min(data_filtered[,2]))
+
+        # 如果分类符合预期，则保存结果
+        # if(!is_desired_classification) {
+        if(is_desired_classification) {
+          results[[paste(a, b, sep = "_")]] <- km$cluster 
+          # 输出：$`100_200`
+          #          4    9   11   12   13   15   22   23   29   32   33   36   39   50   53   54 
+          #          1    1    2    2    1    2    2    1    2    1    2    1    1    1    2    1 
+    
+          # 绘图查看结果
+          # ggplot(data_filtered, aes(x = a, y = b, color = factor(km$cluster))) +
+          #   geom_point() +
+          #   labs(title = paste("A =", a, "B =", b))
+          # plot(data_filtered, col = km$cluster, xlab = "x", ylab = "y")
+        }
+      }
+    }
+  }
+
+  # 处理都小的
+  for(a in A) {
+    for(b in B) {
+    
+      sorted_1 <- order(data[ , 1]) # 第一列
+      sorted_2 <- order(data[ , 2]) # 第二列
+      # 删除都高的数据
+      intersection <- Reduce(intersect, list(sorted_1[1:a], sorted_2[1:b]))
+      data_filtered = data[-intersection, ]
+    
+      if(nrow(data_filtered) >= 0.5*nrow(data)){ # 筛选后的观测个数大于等于原数据观测个数的百分之50才算
+
+        # 应用Kmeans算法
+        set.seed(123) # 确保可重复性
+        km <- kmeans(data_filtered, centers = 2)
+      
+        # 获取每个类别的均值 ########################################################
+        means <- aggregate(data_filtered[, 2], list(km$cluster), mean) # 根据分类结果对data_filtered第二列（y）取均值
+        names(means) <- c("cluster", "mean_y")
+        # 确保类别1的y均值总是大于类别2的
+        if(means$mean_y[means$cluster == 1] < means$mean_y[means$cluster == 2]){
+          km$cluster <- ifelse(km$cluster == 1, 2, 1)
+        }
+        #############################################################################
+    
+        index_class1 = which(km$cluster == 1)
+        index_class2 = which(km$cluster == 2)
+    
+        class1 = data[index_class1, ]
+        class2 = data[index_class2, ]
+    
+        # 判断分类是否符合预期（您需要编写一个判断函数）
+        mean_A_class1 = mean(class1[,1])
+        mean_B_class1 = mean(class1[,2])
+        mean_A_class2 = mean(class2[,1])
+        mean_B_class2 = mean(class2[,2])
+  
+        # is_desired_classification = ((mean_A_class1>mean_A_class2 & mean_B_class1>mean_B_class2) | 
+        #                              (mean_A_class1<mean_A_class2 & mean_B_class1<mean_B_class2))
+        is_desired_classification = 
+          mean_A_class1-mean_A_class2 < -0.001 * (max(data_filtered[,1]) - min(data_filtered[,1])) & mean_B_class1-mean_B_class2 > 0.001 *   (max(data_filtered[,2]) - min(data_filtered[,2])) 
+
+        # 如果分类符合预期，则保存结果
+        # if(!is_desired_classification) {
+        if(is_desired_classification) {
+          results[[paste(a, b, sep = "_")]] <- km$cluster 
+          # 输出：$`100_200`
+          #          4    9   11   12   13   15   22   23   29   32   33   36   39   50   53   54 
+          #          1    1    2    2    1    2    2    1    2    1    2    1    1    1    2    1 
+    
+          # 绘图查看结果
+          # ggplot(data_filtered, aes(x = a, y = b, color = factor(km$cluster))) +
+          #   geom_point() +
+          #   labs(title = paste("A =", a, "B =", b))
+          # plot(data_filtered, col = km$cluster, xlab = "x", ylab = "y")
+        }
+      }
+    }
+  }
+  
+  # 将每次的分类添加到data中
+  for(i in seq_along(results)) {
+    clusters <- results[[i]]
+    # clusters是一个命名向量，其中的名字是索引，值是类别
+    column = i + 2
+    for(j in names(clusters)) {
+      data[j, column] = clusters[j]
+    }
+  }
+  
+  # 投票选出最终的分类
+  if(ncol(data)>=3){
+    print(ncol(data))
+  final_classifications <- apply(data[, 3:ncol(data)], 1, function(row) {
+    if(all(is.na(row))) {
+      # 如果这一行的所有值都是NA，返回NA
+      return(NA)
+    } else {
+      # 计算类别1和类别2的次数
+      count_class_1 <- sum(row == 1, na.rm = TRUE)
+      count_class_2 <- sum(row == 2, na.rm = TRUE)
+    
+      # 返回出现次数较多的类别
+      if(count_class_1 > count_class_2) {
+        return(1)
+      } else if(count_class_1 < count_class_2) {
+        return(2)
+      } else {
+        # 如果类别1和类别2出现次数相同，则可以返回NA或者另一个特定值
+        # 这里我们选择返回NA表示没有一个明确的类别
+        return(NA)
+      }
+    }
+  })
+
+  # 将最终的分类结果添加为新的一列
+  data$final_classification <- final_classifications
+
+  # 将final_classification列中的NA替换为0
+  data$final_classification[is.na(data$final_classification)] = 0
+
+  data$final_classification = as.factor(data$final_classification)
+  print(data)
+  plot(data[, c(1,2)], col = data$final_classification, xlab = "x", ylab = "y")
+  print(aggregate(data[ , 1], by = list(data$final_classification), FUN = mean))
+  print(aggregate(data[ , 2], by = list(data$final_classification), FUN = mean))
+  }else{
+    print("没有分类")
+  }
+}
+```
