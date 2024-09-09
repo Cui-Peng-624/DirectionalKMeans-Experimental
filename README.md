@@ -96,7 +96,7 @@ We also tested the algorithm on a football dataset, where it successfully identi
 
 ## Usage
 
-To run the algorithm, simply pass your dataset (with two variables) to the `BEST` function, along with flags for standardization, log transformation, and normalization.
+To run the algorithm, simply pass your dataset (with two variables) to the `DKmeans` function, along with flags for standardization, log transformation, and normalization.
 
 ```r
 # Example usage
